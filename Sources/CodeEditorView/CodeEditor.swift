@@ -634,25 +634,11 @@ extension CodeEditor: UIViewRepresentable {
         // Update of `self.text` happens in `CodeStorageDelegate` — see [Note Propagating text changes into SwiftUI].
         func textDidChange(_ textView: UITextView) { }
 
-        func selectionDidChange(_ textView: NSTextView) {
+        func selectionDidChange(_ textView: UITextView) {
             guard !updatingView else { return }
 
-            let newValue = textView.selectedRanges.map { $0.rangeValue }
-            if self.position.selections != newValue {
-
-                self.position.selections = newValue
-
-                textView.scrollRangeToVisible(textView.selectedRange())
-
-                if let codeStorageDelegate =
-                    ((textView as? CodeView)?.optCodeStorage as? CodeStorage)?.delegate
-                    as? CodeStorageDelegate
-                {
-                    self.info.selectionSummary =
-                    Info.SelectionSummary(selections: newValue,
-                                          with: codeStorageDelegate.lineMap)
-                }
-            }
+            let newValue = [textView.selectedRange]
+            if self.position.selections != newValue { self.position.selections = newValue }
         }
 
         func scrollPositionDidChange(_ scrollView: UIScrollView) {
@@ -786,6 +772,21 @@ extension CodeEditor: NSViewRepresentable {
                 coordinator.actions.language.extraActions = actions
             }
 
+        if let textStorage = codeView.textStorage {
+            context.coordinator.textStorageDidProcessEditingObserver =
+            NotificationCenter.default.addObserver(
+                forName: NSTextStorage.didProcessEditingNotification,
+                object: textStorage,
+                queue: .main
+            ) { [weak codeView] _ in
+                guard let codeView else { return }
+                DispatchQueue.main.async { [weak codeView] in
+                    guard let codeView else { return }
+                    codeView.scrollRangeToVisible(codeView.selectedRange())
+                }
+            }
+        }
+
         return scrollView
     }
 
@@ -873,15 +874,15 @@ extension CodeEditor: NSViewRepresentable {
         var extraActionsCancellable:           Cancellable?
         var breakUndoCoalescingCancellable:    Cancellable?
 
+        var textStorageDidProcessEditingObserver: NSObjectProtocol?
+
         deinit {
             if let observer = boundsChangedNotificationObserver { NotificationCenter.default.removeObserver(observer) }
+            if let observer = textStorageDidProcessEditingObserver { NotificationCenter.default.removeObserver(observer) }
         }
 
         // Update of `self.text` happens in `CodeStorageDelegate` — see [Note Propagating text changes into SwiftUI].
-        func textDidChange(_ textView: NSTextView) {
-            guard !updatingView else { return }
-            textView.scrollRangeToVisible(textView.selectedRange())
-        }
+        func textDidChange(_ textView: NSTextView) { }
 
         func selectionDidChange(_ textView: NSTextView) {
             guard !updatingView else { return }
