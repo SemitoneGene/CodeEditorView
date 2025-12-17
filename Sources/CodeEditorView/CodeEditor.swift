@@ -878,7 +878,10 @@ extension CodeEditor: NSViewRepresentable {
         }
 
         // Update of `self.text` happens in `CodeStorageDelegate` — see [Note Propagating text changes into SwiftUI].
-        func textDidChange(_ textView: NSTextView) { }
+        func textDidChange(_ textView: NSTextView) {
+            guard !updatingView else { return }
+            textView.scrollRangeToVisible(textView.selectedRange())
+        }
 
         func selectionDidChange(_ textView: NSTextView) {
             guard !updatingView else { return }
@@ -952,7 +955,7 @@ extension CodeEditor.Position: RawRepresentable, Codable {
 
             selections             = components[0].components(separatedBy: ";").compactMap{ parseNSRange(lexeme: $0) }
             verticalScrollPosition = CGFloat(Double(components[1]) ?? 0)
-            
+
         } else { self = CodeEditor.Position() }
     }
 
