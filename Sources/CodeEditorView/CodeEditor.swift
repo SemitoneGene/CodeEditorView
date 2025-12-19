@@ -792,6 +792,20 @@ extension CodeEditor: NSViewRepresentable {
 
     public func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let codeView = scrollView.documentView as? CodeView else { return }
+
+            if codeView.isDragSelecting {
+                // Keep bindings up to date, but do NOT touch the view.
+                context.coordinator.updateBindings(
+                    text: $text,
+                    position: $position,
+                    messages: $messages,
+                    setAction: definitiveSetActions,
+                    setInfo: definitiveSetInfo
+                )
+                return
+            }
+
+
         context.coordinator.updatingView = true
         defer {
             context.coordinator.updatingView = false
