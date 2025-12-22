@@ -884,8 +884,8 @@ extension CodeEditor: NSViewRepresentable {
                     codeView.font = theme.font
                 }
             }
-
         }
+
         if codeView.lastMessages != messages { codeView.update(messages: messages) }
         if !context.coordinator.applyingCommandSelection,
            selections != codeView.selectedRanges
@@ -924,6 +924,22 @@ extension CodeEditor: NSViewRepresentable {
                     }
 
             }
+        }
+
+        DispatchQueue.main.async { [weak scrollView, weak codeView] in
+            guard let scrollView, let codeView else { return }
+
+            // Force layout for the entire document, not just the viewport
+            if let tlm = codeView.textLayoutManager {
+                tlm.ensureLayout(for: tlm.documentRange)
+            }
+
+            // Ensure view geometry is up to date
+            codeView.layoutSubtreeIfNeeded()
+            scrollView.layoutSubtreeIfNeeded()
+
+            // Now the scroll view can compute correct scrollbar geometry
+            scrollView.reflectScrolledClipView(scrollView.contentView)
         }
     }
 
