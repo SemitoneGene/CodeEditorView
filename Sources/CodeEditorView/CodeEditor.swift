@@ -85,8 +85,6 @@ public struct CodeEditor {
     var definitiveSetActions: SetActions { return setActionsParam ?? setActions }
     var definitiveSetInfo: SetInfo { return setInfoParam ?? setInfo }
 
-
-
     /// Creates a fully configured code editor.
     ///
     /// - Parameters:
@@ -925,22 +923,6 @@ extension CodeEditor: NSViewRepresentable {
 
             }
         }
-
-        DispatchQueue.main.async { [weak scrollView, weak codeView] in
-            guard let scrollView, let codeView else { return }
-
-            // Force layout for the entire document, not just the viewport
-            if let tlm = codeView.textLayoutManager {
-                tlm.ensureLayout(for: tlm.documentRange)
-            }
-
-            // Ensure view geometry is up to date
-            codeView.layoutSubtreeIfNeeded()
-            scrollView.layoutSubtreeIfNeeded()
-
-            // Now the scroll view can compute correct scrollbar geometry
-            scrollView.reflectScrolledClipView(scrollView.contentView)
-        }
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -960,6 +942,8 @@ extension CodeEditor: NSViewRepresentable {
 
         var commandCancellable: AnyCancellable?
         var applyingCommandSelection = false
+        
+        var didScheduleDelayedScrollerSync = true
 
         deinit {
             if let observer = boundsChangedNotificationObserver { NotificationCenter.default.removeObserver(observer) }
@@ -985,7 +969,7 @@ extension CodeEditor: NSViewRepresentable {
             }
         }
 
-        @MainActor
+      @MainActor
         func scrollPositionDidChange(_ scrollView: NSScrollView) {
             guard !updatingView else { return }
 

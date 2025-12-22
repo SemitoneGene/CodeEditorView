@@ -19,8 +19,7 @@ import LanguageSupport
 private let logger = Logger(subsystem: "org.justtesting.CodeEditorView", category: "CodeView")
 
 
-// MARK: -
-// MARK: Message info
+// MARK: - Message info
 
 /// Information required to layout message views.
 ///
@@ -52,8 +51,7 @@ typealias MessageViews = [LineInfo.MessageBundle.ID: MessageInfo]
 
 #if os(iOS) || os(visionOS)
 
-// MARK: -
-// MARK: UIKit version
+// MARK: - UIKit version
 
 /// `UITextView` with a gutter
 ///
@@ -685,9 +683,12 @@ final class CodeView: NSTextView {
                                                  object: self,
                                                  queue: .main) { [weak self] _ in
 
-            //        self?.infoPopover?.close()
-            self?.considerCompletionFor(range: self!.rangeForUserCompletion)
-            self?.invalidateMessageViews(withIDs: self!.codeStorageDelegate.lastInvalidatedMessageIDs)
+
+            guard let self else { return }
+
+            self.considerCompletionFor(range: self.rangeForUserCompletion)
+            self.invalidateMessageViews(withIDs: self.codeStorageDelegate.lastInvalidatedMessageIDs)
+            //self.invalidateSyntaxHighlighting()
         }
 
         // Popups should disappear on cursor change.
@@ -726,8 +727,10 @@ final class CodeView: NSTextView {
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] messages in
 
-                    self?.setMessages(messages)
-                    self?.update(messages: messages)
+                    guard let self else { return }
+
+                    self.setMessages(messages)
+                    self.update(messages: messages)
                 }
 
             eventsCancellable = languageService.events
@@ -1429,6 +1432,21 @@ extension CodeView {
 
             case .tokensAvailable(lineRange: let lineRange):
                 Task { await codeStorageDelegate.requestSemanticTokens(for: lineRange, in: codeStorage) }
+        }
+    }
+
+    private func invalidateSyntaxHighlighting() {
+        guard let tlm = textLayoutManager else { return }
+
+        tlm.invalidateLayout(for: tlm.documentRange)
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.ensureLayout(includingMinimap: true)
+            self.needsDisplay = true
+            self.gutterView?.needsDisplay = true
+            self.minimapView?.needsDisplay = true
+            self.minimapGutterView?.needsDisplay = true
         }
     }
 }
