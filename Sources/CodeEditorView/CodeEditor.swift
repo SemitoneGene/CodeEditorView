@@ -13,6 +13,19 @@ import Rearrange
 import LanguageSupport
 
 
+public struct EditorCommand {
+    public let selection: NSRange
+    public let reveal: Bool
+
+    public init(selection: NSRange, reveal: Bool = true) {
+        self.selection = selection
+        self.reveal = reveal
+    }
+}
+
+public typealias EditorCommandSubject = PassthroughSubject<EditorCommand, Never>
+
+
 // MARK: -
 // MARK: Basic shared definition
 
@@ -56,6 +69,8 @@ public struct CodeEditor {
     let setActionsParam:     SetActions?
     let setInfoParam:        SetInfo?
 
+    private let command: EditorCommandSubject?
+
     @Binding private var text:     String
     @Binding private var position: Position
     @Binding private var messages: Set<TextLocated<Message>>
@@ -69,6 +84,8 @@ public struct CodeEditor {
     var definitiveLayout: LayoutConfiguration { return layout ?? layoutConfiguration }
     var definitiveSetActions: SetActions { return setActionsParam ?? setActions }
     var definitiveSetInfo: SetInfo { return setInfoParam ?? setInfo }
+
+
 
     /// Creates a fully configured code editor.
     ///
@@ -96,6 +113,7 @@ public struct CodeEditor {
                 language:            LanguageConfiguration = .none,
                 layout:              LayoutConfiguration = .standard,
                 breakUndoCoalescing: PassthroughSubject<(), Never>? = nil,
+                command:             EditorCommandSubject? = nil,
                 setActions:          ((Actions) -> Void)? = nil,
                 setInfo:             ((Info) -> Void)? = nil)
     {
@@ -107,6 +125,7 @@ public struct CodeEditor {
         self.breakUndoCoalescing = breakUndoCoalescing
         self.setActionsParam     = setActions.flatMap{ SetActions($0) }
         self.setInfoParam        = setInfo.flatMap{ SetInfo($0) }
+        self.command             = command
     }
 
     /// Creates a fully configured code editor.
@@ -125,7 +144,8 @@ public struct CodeEditor {
                 position:            Binding<Position>,
                 messages:            Binding<Set<TextLocated<Message>>>,
                 language:            LanguageConfiguration = .none,
-                breakUndoCoalescing: PassthroughSubject<(), Never>? = nil)
+                breakUndoCoalescing: PassthroughSubject<(), Never>? = nil,
+                command:             EditorCommandSubject? = nil)
     {
         self._text               = text
         self._position           = position
@@ -135,6 +155,7 @@ public struct CodeEditor {
         self.breakUndoCoalescing = breakUndoCoalescing
         self.setActionsParam     = nil
         self.setInfoParam        = nil
+        self.command             = command
     }
 
     public class _Coordinator {
@@ -659,7 +680,7 @@ extension CodeEditor: UIViewRepresentable {
 extension CodeEditor: NSViewRepresentable {
 
     public func makeNSView(context: Context) -> NSScrollView {
-
+        
         // We pass this function down into `CodeStorageDelegate` to facilitate updates to the `text` binding. For details,
         // see [Note Propagating text changes into SwiftUI].
         func setText(_ text: String) {
@@ -699,6 +720,34 @@ extension CodeEditor: NSViewRepresentable {
 
         // Embed text view in scroll view
         scrollView.documentView = codeView
+
+        context.coordinator.commandCancellable = command?
+            .receive(on: RunLoop.main)
+            .sink { [weak codeView, weak coordinator = context.coordinator] cmd in
+                guard let codeView, let coordinator else { return }
+
+                let ns = codeView.string as NSString
+                let loc = max(0, min(cmd.selection.location, ns.length))
+                let len = max(0, min(cmd.selection.length, ns.length - loc))
+                let range = NSRange(location: loc, length: len)
+
+                coordinator.applyingCommandSelection = true
+                defer { coordinator.applyingCommandSelection = false }
+
+                codeView.window?.makeFirstResponder(codeView)
+
+                codeView.setSelectedRanges(
+                    [NSValue(range: range)],
+                    affinity: .downstream,
+                    stillSelecting: false
+                )
+
+                if cmd.reveal {
+                    codeView.scrollRangeToVisible(range)
+                }
+
+                coordinator.position.selections = [range]
+            }
 
         // NB: We are not setting `codeView.text` here. That will happen via `updateNSView(:)`.
         // This implies that we must take care to not report that initial updates as a change to any connected language
@@ -793,17 +842,17 @@ extension CodeEditor: NSViewRepresentable {
     public func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let codeView = scrollView.documentView as? CodeView else { return }
 
-            if codeView.isDragSelecting {
-                // Keep bindings up to date, but do NOT touch the view.
-                context.coordinator.updateBindings(
-                    text: $text,
-                    position: $position,
-                    messages: $messages,
-                    setAction: definitiveSetActions,
-                    setInfo: definitiveSetInfo
-                )
-                return
-            }
+        if codeView.isDragSelecting {
+            // Keep bindings up to date, but do NOT touch the view.
+            context.coordinator.updateBindings(
+                text: $text,
+                position: $position,
+                messages: $messages,
+                setAction: definitiveSetActions,
+                setInfo: definitiveSetInfo
+            )
+            return
+        }
 
 
         context.coordinator.updatingView = true
@@ -837,12 +886,14 @@ extension CodeEditor: NSViewRepresentable {
 
         }
         if codeView.lastMessages != messages { codeView.update(messages: messages) }
-        if selections != codeView.selectedRanges {
+        if !context.coordinator.applyingCommandSelection,
+           selections != codeView.selectedRanges
+        {
             codeView.selectedRanges = selections
-            if let codeStorageDelegate = codeView.optCodeStorage?.delegate as? CodeStorageDelegate
-            {
-                context.coordinator.info.selectionSummary = Info.SelectionSummary(selections: position.selections,
-                                                                                  with: codeStorageDelegate.lineMap)
+            if let codeStorageDelegate = codeView.optCodeStorage?.delegate as? CodeStorageDelegate {
+                context.coordinator.info.selectionSummary =
+                Info.SelectionSummary(selections: position.selections,
+                                      with: codeStorageDelegate.lineMap)
             }
         }
         if abs(position.verticalScrollPosition - scrollView.verticalScrollPosition) > 0.0001 {
@@ -889,6 +940,9 @@ extension CodeEditor: NSViewRepresentable {
         var breakUndoCoalescingCancellable:    Cancellable?
 
         var textStorageDidProcessEditingObserver: NSObjectProtocol?
+
+        var commandCancellable: AnyCancellable?
+        var applyingCommandSelection = false
 
         deinit {
             if let observer = boundsChangedNotificationObserver { NotificationCenter.default.removeObserver(observer) }
