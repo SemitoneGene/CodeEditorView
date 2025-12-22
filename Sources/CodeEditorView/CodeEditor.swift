@@ -698,10 +698,11 @@ extension CodeEditor: NSViewRepresentable {
 
         // Set up scroll view
         let scrollView = NSScrollView(frame: CGRect(x: 0, y: 0, width: 100, height: 40))
-        scrollView.borderType          = .noBorder
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalRuler  = false
         scrollView.autoresizingMask    = [.width, .height]
+        scrollView.autohidesScrollers = false
+        scrollView.scrollerStyle = .legacy
 
         // Set up text view with gutter
         // NB: Update with `setMessages` must go via the coordinator to work with view updates changing the binding.
