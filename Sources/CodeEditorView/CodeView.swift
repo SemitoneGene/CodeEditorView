@@ -835,20 +835,23 @@ final class CodeViewDelegate: NSObject, NSTextViewDelegate {
 
 /// Custom view for background highlights.
 ///
-final class CodeBackgroundHighlightView: NSBox {
+final class CodeBackgroundHighlightView: NSView {
 
-    /// The background colour displayed by this view.
-    ///
     var color: NSColor {
-        get { fillColor }
-        set { fillColor = newValue }
+        get {
+            guard let cg = layer?.backgroundColor else { return .clear }
+            return NSColor(cgColor: cg) ?? .clear
+        }
+        set {
+            wantsLayer = true
+            layer?.backgroundColor = newValue.cgColor
+        }
     }
 
     init(color: NSColor) {
         super.init(frame: .zero)
-        self.color  = color
-        boxType     = .custom
-        borderWidth = 0
+        wantsLayer = true
+        layer?.backgroundColor = color.cgColor
     }
 
     @available(*, unavailable)
